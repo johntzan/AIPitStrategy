@@ -30,8 +30,16 @@ jobs:
       - name: Resolve latest SimHub release
         id: simhub
         shell: pwsh
+        env:
+          # Authenticated GitHub API requests get 1,000/hr per repo; the runner's
+          # anonymous limit (60/hr shared across the Azure IP pool) is too tight.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $headers = @{ "User-Agent" = "PitStrategy-CI" }
+          $headers = @{
+            "User-Agent"    = "PitStrategy-CI"
+            "Authorization" = "Bearer $env:GH_TOKEN"
+            "Accept"        = "application/vnd.github+json"
+          }
           $latest = Invoke-RestMethod "https://api.github.com/repos/SHWotever/SimHub/releases/latest" -Headers $headers
           $asset = $latest.assets | Where-Object { $_.name -like "*.zip" } | Select-Object -First 1
           if (-not $asset) { throw "No zip asset found in SHWotever/SimHub latest release" }
