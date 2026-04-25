@@ -11,10 +11,10 @@
 
 1. Download `PitStrategy-vX.Y.Z-windows.zip` from the [Releases](../../releases) page.
 2. Extract `PitStrategy.dll` into `C:\Program Files (x86)\SimHub\` (alongside SimHub's own DLLs).
-3. Copy `PitStrategy.simhubdash` (when shipped) into `Documents\SimHub\Dashboards\`.
-4. Restart SimHub.
-5. SimHub may prompt you the first time it sees the DLL — click **Yes** to enable.
-6. In SimHub, go to **Settings** → **Additional plugins** and confirm **Pit Strategy** is enabled.
+3. Restart SimHub.
+4. SimHub may prompt you the first time it sees the DLL — click **Yes** to enable.
+5. In SimHub, go to **Settings** → **Additional plugins** and confirm **Pit Strategy** is enabled.
+6. Build a dashboard yourself in Dash Studio (see ["Building the dashboard in Dash Studio"](#building-the-dashboard-in-dash-studio) below) — a pre-built `PitStrategy.simhubdash` is not yet shipped. The release zip includes `PitStrategy.simhubdash.template.json` documenting the available properties and example NCalc bindings.
 
 ## Option B — build from source
 
