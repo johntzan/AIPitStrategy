@@ -64,55 +64,51 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile simhub.zip -UseBasicParsing
           $size = (Get-Item simhub.zip).Length
           Write-Host "Downloaded $size bytes"
-          if ($size -lt 50000000) {
-            Write-Host "First 256 bytes (likely an HTML redirect or error page):"
-            Get-Content simhub.zip -TotalCount 1 -Encoding Byte | Select-Object -First 256 | ForEach-Object { [char]$_ } | Join-String -Separator ''
-            throw "SimHub zip download too small ($size bytes) — likely a redirect or 404"
-          }
 
-          $magic = [System.IO.File]::ReadAllBytes("simhub.zip")[0..3] | ForEach-Object { [char]$_ }
-          Write-Host "Magic bytes: $($magic -join '')"
-
-          Write-Host "── 7z list (first 30 entries) ───────────────────────────────────"
-          $listOutput = & 7z l simhub.zip 2>&1
-          Write-Host "7z exit code: $LASTEXITCODE"
-          $listOutput | Select-Object -First 60 | ForEach-Object { Write-Host $_ }
-          if ($LASTEXITCODE -ne 0) { throw "7z list failed with exit $LASTEXITCODE" }
-
+          # The SimHub release "zip" actually contains a single Inno Setup installer EXE.
+          # Step 1: 7z extract the EXE out of the wrapper zip.
           New-Item -ItemType Directory -Force -Path simhub-extract | Out-Null
-          Write-Host "── 7z extract ───────────────────────────────────────────────────"
-          $extractOutput = & 7z x simhub.zip "-osimhub-extract" -y -bsp1 2>&1
-          Write-Host "7z extract exit code: $LASTEXITCODE"
-          $extractOutput | Select-Object -Last 30 | ForEach-Object { Write-Host $_ }
+          & 7z x simhub.zip "-osimhub-extract" -y 1>$null
           if ($LASTEXITCODE -ne 0) { throw "7z extraction failed with exit $LASTEXITCODE" }
 
-          Write-Host "── Top of extracted zip ─────────────────────────────────────────"
-          Get-ChildItem simhub-extract -Depth 1 | Format-Table Name, Length, FullName -AutoSize
+          $installer = Get-ChildItem simhub-extract -Filter "SimHubSetup_*.exe" -Recurse | Select-Object -First 1
+          if (-not $installer) { throw "SimHubSetup_*.exe not found inside the SimHub release zip" }
+          Write-Host "Installer: $($installer.FullName) ($($installer.Length) bytes)"
 
-          $allDlls = Get-ChildItem simhub-extract -Recurse -Filter "*.dll"
-          Write-Host "── Found $($allDlls.Count) DLL(s) in the extracted tree ─────────"
-          $allDlls | Select-Object -First 20 | ForEach-Object { Write-Host "  $($_.FullName)" }
+          # Step 2: run the Inno Setup installer silently. /VERYSILENT suppresses UI,
+          # /SUPPRESSMSGBOXES blocks any modal dialogs, /NORESTART avoids a reboot prompt.
+          # Runner has admin rights so the install lands in the default Program Files path.
+          Write-Host "Running SimHub installer silently..."
+          $proc = Start-Process -FilePath $installer.FullName `
+            -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/NOICONS" `
+            -Wait -PassThru
+          Write-Host "Installer exit code: $($proc.ExitCode)"
+          if ($proc.ExitCode -ne 0) { throw "SimHub installer failed with exit $($proc.ExitCode)" }
 
-          # Sometimes SimHub ships a nested setup .exe rather than a portable layout —
-          # if so, our DLL search will fail and we need a different approach.
-          $allExes = Get-ChildItem simhub-extract -Recurse -Filter "*.exe"
-          if ($allExes.Count -gt 0) {
-            Write-Host "── EXE files found (first 5) ────────────────────────────────────"
-            $allExes | Select-Object -First 5 | ForEach-Object { Write-Host "  $($_.FullName)" }
-          }
+          # Step 3: locate the SDK DLLs in the install dir.
+          $candidates = @(
+            "C:\Program Files (x86)\SimHub",
+            "C:\Program Files\SimHub"
+          )
+          $simhubInstall = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $simhubInstall) { throw "SimHub install directory not found after silent install" }
+          Write-Host "SimHub installed at: $simhubInstall"
 
-          $plugins = $allDlls | Where-Object { $_.Name -ieq "SimHub.Plugins.dll" } | Select-Object -First 1
-          $reader  = $allDlls | Where-Object { $_.Name -ieq "GameReaderCommon.dll" } | Select-Object -First 1
-          if (-not $plugins) { throw "SimHub.Plugins.dll not found in SimHub release zip" }
-          if (-not $reader)  { throw "GameReaderCommon.dll not found in SimHub release zip" }
+          $plugins = Join-Path $simhubInstall "SimHub.Plugins.dll"
+          $reader  = Join-Path $simhubInstall "GameReaderCommon.dll"
+          if (-not (Test-Path $plugins)) { throw "SimHub.Plugins.dll not found at $plugins" }
+          if (-not (Test-Path $reader))  { throw "GameReaderCommon.dll not found at $reader" }
 
           New-Item -ItemType Directory -Force -Path lib/simhub-sdk | Out-Null
-          Copy-Item $plugins.FullName lib/simhub-sdk/ -Force
-          Copy-Item $reader.FullName  lib/simhub-sdk/ -Force
+          Copy-Item $plugins lib/simhub-sdk/ -Force
+          Copy-Item $reader  lib/simhub-sdk/ -Force
+
+          # Cleanup wrapper zip + extracted installer to keep the workspace small.
           Remove-Item simhub.zip -Force
           Remove-Item simhub-extract -Recurse -Force
+
           Write-Host "Vendored SimHub SDK DLLs:"
-          Get-ChildItem lib/simhub-sdk/
+          Get-ChildItem lib/simhub-sdk/ | Format-Table Name, Length -AutoSize
 
       # ── Build & test ─────────────────────────────────────────────────────────────────
       - name: Restore solution
