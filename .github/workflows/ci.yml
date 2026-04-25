@@ -70,14 +70,20 @@ jobs:
             throw "SimHub zip download too small ($size bytes) — likely a redirect or 404"
           }
 
-          # Inspect the zip's magic bytes first — SimHub sometimes ships a self-extracting
-          # exe with a .zip extension, which PowerShell's Expand-Archive silently rejects.
           $magic = [System.IO.File]::ReadAllBytes("simhub.zip")[0..3] | ForEach-Object { [char]$_ }
           Write-Host "Magic bytes: $($magic -join '')"
 
+          Write-Host "── 7z list (first 30 entries) ───────────────────────────────────"
+          $listOutput = & 7z l simhub.zip 2>&1
+          Write-Host "7z exit code: $LASTEXITCODE"
+          $listOutput | Select-Object -First 60 | ForEach-Object { Write-Host $_ }
+          if ($LASTEXITCODE -ne 0) { throw "7z list failed with exit $LASTEXITCODE" }
+
           New-Item -ItemType Directory -Force -Path simhub-extract | Out-Null
-          # 7z (preinstalled on windows-latest) handles standard zips, SFX exes, and 7z archives.
-          & 7z x simhub.zip -osimhub-extract -y -bd 1>$null
+          Write-Host "── 7z extract ───────────────────────────────────────────────────"
+          $extractOutput = & 7z x simhub.zip "-osimhub-extract" -y -bsp1 2>&1
+          Write-Host "7z extract exit code: $LASTEXITCODE"
+          $extractOutput | Select-Object -Last 30 | ForEach-Object { Write-Host $_ }
           if ($LASTEXITCODE -ne 0) { throw "7z extraction failed with exit $LASTEXITCODE" }
 
           Write-Host "── Top of extracted zip ─────────────────────────────────────────"
