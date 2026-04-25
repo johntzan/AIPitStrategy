@@ -25,3 +25,6 @@ lib/simhub-sdk/*.dll
 
 # Replay frame dumps captured for debugging
 tests/PitStrategy.Core.Tests/Fixtures/captured/*.json
+
+# Local scratch dir for downloaded SDK DLLs, decompiled output, etc.
+scratch/
