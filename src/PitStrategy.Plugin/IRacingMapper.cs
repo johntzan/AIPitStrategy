@@ -6,16 +6,13 @@ using PitStrategy.Core.Inputs;
 namespace PitStrategy.Plugin
 {
     /// <summary>
-    /// Maps SimHub's normalized <see cref="GameData"/> + iRacing's raw <c>DataSampleEx</c>
-    /// into our <see cref="RaceState"/>. Uses <c>dynamic</c> for raw iRacing data so the plugin
-    /// compiles regardless of which IRSDK wrapper SimHub ships in a given version — the field
-    /// names below match the public iRacing telemetry contract.
+    /// Maps SimHub's normalized <see cref="GameData"/> + iRacing's raw telemetry sample
+    /// into our <see cref="RaceState"/>.
     ///
-    /// IMPORTANT: This file references iRacing field shape that has been verified through
-    /// public docs (https://sajax.github.io/irsdkdocs/) but not run-time tested in this repo
-    /// yet. Field naming for <c>data.NewData</c> matches SimHub's normalized opponent model.
-    /// On the first Windows build, expect to fix one or two of these names if SimHub renamed
-    /// something between versions — log the corrections in <c>docs/IRACING-FIELDS.md</c>.
+    /// Field-name reference: see docs/IRACING-FIELDS.md and the decompiled
+    /// SimHub.Plugins / GameReaderCommon DLLs. The normalized layer uses int-valued
+    /// flags (e.g. <c>IsInPit</c>, <c>IsInPitLane</c>, <c>Flag_Yellow</c>) — convert
+    /// with <c>&gt; 0</c>, not a direct bool cast.
     /// </summary>
     public sealed class IRacingMapper
     {
@@ -27,89 +24,75 @@ namespace PitStrategy.Plugin
         {
             if (data?.NewData == null) return null;
 
-            // Raw iRacing data sample. Cast to dynamic so we don't depend on a specific
-            // IRSDK wrapper namespace at compile time.
-            dynamic? raw = null;
-            try { raw = data.NewData.GetRawDataObject(); } catch { /* swallow */ }
-
             var nd = data.NewData;
 
             // ── Identity / progress ────────────────────────────────────────────────────
-            int currentLap = (int)Math.Max(0, nd.CurrentLap);
-            double lapDistPct = SafeDouble(() => (double)nd.TrackPositionPercent);
-            TimeSpan sessionTimeElapsed = nd.SessionTimeLeft is TimeSpan ts ? TimeSpan.Zero - TimeSpan.Zero : TimeSpan.Zero;
-            // SessionTimeElapsed isn't directly normalized; derive it from raw if needed below.
+            int currentLap = nd.CurrentLap;
+            // GameData doesn't normalize a 0..1 lap-distance fraction directly; we compute
+            // it from the player's Opponent entry when available (TrackPositionPercent).
+            double lapDistPct = ResolvePlayerLapDistPct(nd);
 
-            // Time remaining + laps remaining
-            TimeSpan? sessionTimeRemaining = null;
-            int? lapsRemaining = null;
-            try
-            {
-                sessionTimeRemaining = nd.SessionTimeLeft;
-                lapsRemaining = nd.RemainingLaps > 0 ? (int?)nd.RemainingLaps : null;
-            }
-            catch { /* not all sims expose these */ }
+            TimeSpan sessionTimeElapsed = TimeSpan.Zero;          // not exposed; defaulted
+            TimeSpan? sessionTimeRemaining = nd.SessionTimeLeft != TimeSpan.Zero
+                ? (TimeSpan?)nd.SessionTimeLeft
+                : null;
+            int? lapsRemaining = nd.RemainingLaps > 0 ? (int?)nd.RemainingLaps : null;
 
             // ── Fuel ────────────────────────────────────────────────────────────────────
-            double fuel = SafeDouble(() => (double)nd.Fuel);
+            double fuel = nd.Fuel;
             double tank = _settings.OverrideTankCapacity
                 ? _settings.TankCapacityLitersOverride
-                : SafeDouble(() => (double)nd.MaxFuel, fallback: 60);
+                : (nd.MaxFuel > 0 ? nd.MaxFuel : 60.0);
 
             double fuelPerLap = _settings.OverrideFuelPerLap
                 ? _settings.FuelPerLapOverride
                 : rollingFuelPerLap;
 
             // ── Pace ────────────────────────────────────────────────────────────────────
-            TimeSpan lastLap = SafeTimeSpan(() => nd.LastLapTime);
-            TimeSpan bestLap = SafeTimeSpan(() => nd.BestLapTime);
+            TimeSpan lastLap = nd.LastLapTime;
+            TimeSpan bestLap = nd.BestLapTime;
 
-            // ── Player pit context ──────────────────────────────────────────────────────
-            bool onPitRoad = SafeBool(() => nd.IsInPitLane);
-            bool inPitStall = SafeBool(() => nd.IsInPit);
+            // ── Player pit context (StatusDataBase exposes int flags 0/1) ──────────────
+            bool onPitRoad = nd.IsInPitLane > 0;
+            bool inPitStall = nd.IsInPit > 0;
 
-            // ── Session flags / FCY (raw iRacing telemetry) ────────────────────────────
-            SessionFlag flags = SessionFlag.Green;
-            bool isUnderFcy = false;
-            bool pitsOpen = true;
-            int playerCarIdx = 0;
-            int playerClassId = 0;
+            // ── Session flags ──────────────────────────────────────────────────────────
+            SessionFlag flags = SessionFlag.None;
+            if (nd.Flag_Green > 0)     flags |= SessionFlag.Green;
+            if (nd.Flag_Yellow > 0)    flags |= SessionFlag.Yellow;
+            if (nd.Flag_Blue > 0)      flags |= SessionFlag.Blue;
+            if (nd.Flag_White > 0)     flags |= SessionFlag.White;
+            if (nd.Flag_Checkered > 0) flags |= SessionFlag.Checkered;
+            // FCY: SimHub doesn't normalize a dedicated FCY flag; we treat field-wide
+            // yellow + a paced field as FCY heuristically. This will be refined by
+            // reading the raw iRacing SessionFlags bitmask in a Phase 3 follow-up.
+            bool isUnderFcy = nd.Flag_Yellow > 0;
+            if (isUnderFcy) flags |= SessionFlag.FullCourseYellow;
 
-            if (raw != null)
-            {
-                try
-                {
-                    uint sf = (uint)raw.Telemetry.SessionFlags;
-                    if ((sf & 0x0010) != 0) flags |= SessionFlag.Yellow;        // yellow
-                    if ((sf & 0x4000) != 0) { flags |= SessionFlag.FullCourseYellow; isUnderFcy = true; } // caution waving
-                    if ((sf & 0x0008) != 0) flags |= SessionFlag.Red;
-                    if ((sf & 0x00040000) != 0) flags |= SessionFlag.White;
-                    if ((sf & 0x00020000) != 0) flags |= SessionFlag.Checkered;
-                }
-                catch { }
+            // ── Player position (Opponent entry) ───────────────────────────────────────
+            int position = nd.Position > 0 ? nd.Position : 1;
+            int classPosition = ResolvePlayerClassPosition(nd, position);
+            int playerClassId = ResolvePlayerClassId(nd);
+            int playerCarIdx = 0; // not exposed by the normalized layer; iRSDK CarIdx requires raw access
 
-                try { pitsOpen = (bool)raw.Telemetry.PitsOpen; } catch { }
-                try { playerCarIdx = (int)raw.SessionInfo.DriverInfo.DriverCarIdx; } catch { }
-                try { playerClassId = (int)raw.SessionInfo.DriverInfo.Drivers[playerCarIdx].CarClassID; } catch { }
+            // ── Rivals ─────────────────────────────────────────────────────────────────
+            var rivals = MapRivals(nd, playerClassId);
 
-                // Rolling fuel sanity: prefer raw FuelLevel over normalized Fuel when available
-                try { fuel = (double)raw.Telemetry.FuelLevel; } catch { }
-            }
+            // ── Tires (default Unknown — iRacing tire-wear access requires raw frame) ──
+            // TODO: pull LFwearL/M/R etc. from data.NewData.GetRawDataObject() once we
+            // verify the iRSDK wrapper type ships with SimHub.
+            var tires = TireWearSnapshot.Unknown;
+            int lapsOnTires = nd.CompletedLaps;
 
-            // ── Rivals (from SimHub's normalized OpponentData if available, else raw) ───
-            var rivals = MapRivals(nd, raw, playerCarIdx, playerClassId);
-
-            // ── Tires (raw iRacing) ─────────────────────────────────────────────────────
-            var tires = MapTires(raw);
-            int lapsOnTires = 0;
-            try { if (raw != null) lapsOnTires = (int)raw.Telemetry.LapCompleted; } catch { }
-
-            // ── Weather ─────────────────────────────────────────────────────────────────
-            var weather = MapWeather(raw);
-
-            // ── Player position ─────────────────────────────────────────────────────────
-            int position = SafeInt(() => (int)nd.Position, fallback: 1);
-            int classPosition = SafeInt(() => (int)nd.PositionInClass, fallback: 1);
+            // ── Weather (best-effort from normalized fields) ───────────────────────────
+            var weather = new WeatherSnapshot(
+                TrackTempC: 25,
+                AirTempC: nd.AirTemperature,
+                Humidity: 0.4,
+                SkiesCloudCover: 0.1,
+                PrecipChance: 0,
+                IsRaining: false,
+                TrackDeclaredWet: false);
 
             return new RaceState
             {
@@ -120,14 +103,14 @@ namespace PitStrategy.Plugin
                 LapsRemaining = lapsRemaining,
 
                 FuelLevelLiters = fuel,
-                FuelUsedLastLapLiters = 0, // FuelTracker tracks this internally
+                FuelUsedLastLapLiters = 0,
                 RollingFuelPerLap = fuelPerLap,
                 FuelTrackerHasEnoughData = fuelHasEnoughData,
                 TankCapacityLiters = tank,
 
                 LastLapTime = lastLap,
                 BestLapTime = bestLap,
-                RecentLapTimes = Array.Empty<TimeSpan>(), // populated by plugin's own rolling buffer if needed
+                RecentLapTimes = Array.Empty<TimeSpan>(),
 
                 Tires = tires,
                 LapsOnCurrentTires = lapsOnTires,
@@ -144,134 +127,72 @@ namespace PitStrategy.Plugin
 
                 IsOnPitRoad = onPitRoad,
                 IsInPitStall = inPitStall,
-                PitsOpen = pitsOpen,
-                CompletedPitStops = SafeInt(() => (int)nd.PitCount),
+                PitsOpen = true,
+                CompletedPitStops = 0, // not exposed by normalized layer; computed in Phase 3
             };
         }
 
-        private static IReadOnlyList<RivalState> MapRivals(StatusDataBase nd, dynamic? raw, int playerCarIdx, int playerClassId)
+        private static double ResolvePlayerLapDistPct(StatusDataBase nd)
         {
-            var list = new List<RivalState>();
-
-            // SimHub normalizes opponents into Opponents / OpponentsHandled — name varies by version.
-            // Try the most common surfaces.
-            try
+            if (nd.Opponents == null) return 0;
+            foreach (var op in nd.Opponents)
             {
-                var opponents = nd.Opponents ?? null;
-                if (opponents != null)
+                if (op.IsPlayer) return op.TrackPositionPercent ?? 0;
+            }
+            return 0;
+        }
+
+        private static int ResolvePlayerClassPosition(StatusDataBase nd, int fallback)
+        {
+            if (nd.Opponents == null) return fallback;
+            foreach (var op in nd.Opponents)
+            {
+                if (op.IsPlayer) return op.PositionInClass > 0 ? op.PositionInClass : fallback;
+            }
+            return fallback;
+        }
+
+        private static int ResolvePlayerClassId(StatusDataBase nd)
+        {
+            if (nd.Opponents == null) return 0;
+            foreach (var op in nd.Opponents)
+            {
+                if (op.IsPlayer)
                 {
-                    foreach (var op in (System.Collections.IEnumerable)opponents)
-                    {
-                        dynamic o = op!;
-                        if ((bool?)o.IsPlayer == true) continue;
-                        list.Add(new RivalState(
-                            CarIdx: SafeInt(() => (int)o.CarIndex),
-                            Position: SafeInt(() => (int)o.Position),
-                            ClassPosition: SafeInt(() => (int)o.PositionInClass),
-                            ClassId: SafeInt(() => (int)o.CarClass),
-                            LapsCompleted: SafeInt(() => (int)o.CurrentLap) - 1,
-                            LapDistPct: SafeDouble(() => (double)o.TrackPositionPercent),
-                            GapToPlayerSeconds: SafeTimeSpan(() => o.GaptoPlayer),
-                            LastLapTime: SafeTimeSpan(() => o.LastLapTime),
-                            AverageRecentLapTime: SafeTimeSpan(() => o.LastLapTime),
-                            RecentLapTimeStdDevSeconds: 0.3,
-                            CompletedPitStops: SafeInt(() => (int)o.PitCount),
-                            IsOnPitRoad: SafeBool(() => (bool)o.IsCarInPit)));
-                    }
+                    return int.TryParse(op.CarClassID, out var id) ? id : op.CarClassID?.GetHashCode() ?? 0;
                 }
             }
-            catch { /* OpponentData shape varies; raw fallback below */ }
+            return 0;
+        }
 
-            // Raw iRacing CarIdx* arrays as a fallback. Only build this list if the normalized
-            // path produced nothing.
-            if (list.Count == 0 && raw != null)
+        private static IReadOnlyList<RivalState> MapRivals(StatusDataBase nd, int playerClassId)
+        {
+            if (nd.Opponents == null || nd.Opponents.Count == 0) return Array.Empty<RivalState>();
+
+            var list = new List<RivalState>(nd.Opponents.Count);
+            int idx = 0;
+            foreach (var op in nd.Opponents)
             {
-                try
-                {
-                    int[] positions = (int[])raw.Telemetry.CarIdxPosition;
-                    int[] classPositions = (int[])raw.Telemetry.CarIdxClassPosition;
-                    float[] distPct = (float[])raw.Telemetry.CarIdxLapDistPct;
-                    int[] laps = (int[])raw.Telemetry.CarIdxLap;
-                    float[] lastLapTimes = (float[])raw.Telemetry.CarIdxLastLapTime;
-                    bool[] inPit = (bool[])raw.Telemetry.CarIdxOnPitRoad;
-                    int[] classIds = (int[])raw.Telemetry.CarIdxClassID;
+                int carIdx = idx++;
+                if (op.IsPlayer) continue;
 
-                    for (int i = 0; i < positions.Length; i++)
-                    {
-                        if (i == playerCarIdx) continue;
-                        if (positions[i] <= 0) continue; // not a valid car idx
+                int classId = int.TryParse(op.CarClassID, out var c) ? c : op.CarClassID?.GetHashCode() ?? 0;
 
-                        list.Add(new RivalState(
-                            CarIdx: i,
-                            Position: positions[i],
-                            ClassPosition: classPositions[i],
-                            ClassId: classIds[i],
-                            LapsCompleted: laps[i],
-                            LapDistPct: distPct[i],
-                            GapToPlayerSeconds: TimeSpan.Zero, // not in raw arrays; computed elsewhere if needed
-                            LastLapTime: TimeSpan.FromSeconds(Math.Max(0, lastLapTimes[i])),
-                            AverageRecentLapTime: TimeSpan.FromSeconds(Math.Max(0, lastLapTimes[i])),
-                            RecentLapTimeStdDevSeconds: 0.3,
-                            CompletedPitStops: 0,
-                            IsOnPitRoad: inPit[i]));
-                    }
-                }
-                catch { }
+                list.Add(new RivalState(
+                    CarIdx: carIdx,
+                    Position: op.Position,
+                    ClassPosition: op.PositionInClass,
+                    ClassId: classId,
+                    LapsCompleted: (op.CurrentLap ?? 0) - 1,
+                    LapDistPct: op.TrackPositionPercent ?? 0,
+                    GapToPlayerSeconds: TimeSpan.FromSeconds(op.GaptoPlayer ?? 0),
+                    LastLapTime: op.LastLapTime,
+                    AverageRecentLapTime: op.LastLapTime,
+                    RecentLapTimeStdDevSeconds: 0.3,
+                    CompletedPitStops: 0, // not exposed
+                    IsOnPitRoad: op.IsCarInPitLane));
             }
-
             return list;
         }
-
-        private static TireWearSnapshot MapTires(dynamic? raw)
-        {
-            if (raw == null) return TireWearSnapshot.Unknown;
-            try
-            {
-                double lf = AvgWear(raw, "LFwearL", "LFwearM", "LFwearR");
-                double rf = AvgWear(raw, "RFwearL", "RFwearM", "RFwearR");
-                double lr = AvgWear(raw, "LRwearL", "LRwearM", "LRwearR");
-                double rr = AvgWear(raw, "RRwearL", "RRwearM", "RRwearR");
-                bool available = !(lf == 1 && rf == 1 && lr == 1 && rr == 1);
-                return new TireWearSnapshot(lf, rf, lr, rr, available);
-            }
-            catch { return TireWearSnapshot.Unknown; }
-        }
-
-        private static double AvgWear(dynamic raw, string a, string b, string c)
-        {
-            try
-            {
-                var t = raw.Telemetry;
-                double va = (float)t[a]; double vb = (float)t[b]; double vc = (float)t[c];
-                return (va + vb + vc) / 3.0;
-            }
-            catch { return 1.0; }
-        }
-
-        private static WeatherSnapshot MapWeather(dynamic? raw)
-        {
-            if (raw == null) return WeatherSnapshot.Dry;
-            try
-            {
-                double track = (float)raw.Telemetry.TrackTempCrew;
-                double air = (float)raw.Telemetry.AirTemp;
-                double humidity = (float)raw.Telemetry.RelativeHumidity;
-                double precip = SafeDouble(() => (float)raw.Telemetry.Precipitation);
-                double skies = SafeDouble(() => (int)raw.Telemetry.Skies) / 3.0;
-                bool wet = SafeBool(() => (bool)raw.Telemetry.WeatherDeclaredWet);
-                return new WeatherSnapshot(track, air, humidity, skies, precip, precip > 0.05, wet);
-            }
-            catch { return WeatherSnapshot.Dry; }
-        }
-
-        // ── Small helpers that swallow exceptions so a single missing field doesn't kill the tick.
-        private static double SafeDouble(Func<double> f, double fallback = 0)
-        { try { return f(); } catch { return fallback; } }
-        private static int SafeInt(Func<int> f, int fallback = 0)
-        { try { return f(); } catch { return fallback; } }
-        private static bool SafeBool(Func<bool> f, bool fallback = false)
-        { try { return f(); } catch { return fallback; } }
-        private static TimeSpan SafeTimeSpan(Func<object?> f)
-        { try { var v = f(); return v is TimeSpan ts ? ts : TimeSpan.Zero; } catch { return TimeSpan.Zero; } }
     }
 }

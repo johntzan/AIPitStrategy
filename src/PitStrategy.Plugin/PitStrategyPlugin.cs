@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -32,9 +31,9 @@ namespace PitStrategy.Plugin
 
         public PluginManager PluginManager { get; set; } = null!;
 
-        // ── Visual identity (left-menu icon) ─────────────────────────────────────────────
-        public ImageSource? PictureIcon =>
-            this.ToIcon(Properties.Resources.IconBytes ?? Array.Empty<byte>());
+        // ── IWPFSettingsV2 ───────────────────────────────────────────────────────────────
+        // Icon is optional; returning null keeps SimHub's default plugin icon.
+        public ImageSource PictureIcon => null!;
         public string LeftMenuTitle => "Pit Strategy";
 
         // ── IPlugin ──────────────────────────────────────────────────────────────────────
@@ -48,13 +47,14 @@ namespace PitStrategy.Plugin
             _publisher = new PropertyPublisher(pluginManager, this);
             _publisher.RegisterAll();
 
-            // Bindable actions
+            // Bindable actions: AddAction expects Action<PluginManager, string>.
+            // Phase 3 will hook RunSimulation up to the Monte Carlo simulator.
             pluginManager.AddAction("PitStrategy.Action.RunSimulation", GetType(),
-                (pm, _) => { /* Phase 3: kick off MC. No-op for now. */ });
+                new Action<PluginManager, string>((pm, name) => { /* no-op */ }));
             pluginManager.AddAction("PitStrategy.Action.ResetFuelTracker", GetType(),
-                (pm, _) => _fuel.Reset());
+                new Action<PluginManager, string>((pm, name) => _fuel.Reset()));
             pluginManager.AddAction("PitStrategy.Action.DumpFrame", GetType(),
-                (pm, _) => DumpLatestFrame());
+                new Action<PluginManager, string>((pm, name) => DumpLatestFrame()));
         }
 
         public void End(PluginManager pluginManager)
@@ -75,13 +75,14 @@ namespace PitStrategy.Plugin
             if (data.NewData == null) return;
 
             // Drive FuelTracker every tick (cheap; lap boundary detected internally).
+            // Note: StatusDataBase.IsInPitLane is int (0/1), not bool.
             try
             {
                 _fuel.OnTick(
-                    currentLap: (int)data.NewData.CurrentLap,
+                    currentLap: data.NewData.CurrentLap,
                     currentFuelLiters: data.NewData.Fuel,
-                    isOnPitRoad: data.NewData.IsInPitLane,
-                    isUnderYellow: false, // refined inside the mapper using raw flags
+                    isOnPitRoad: data.NewData.IsInPitLane > 0,
+                    isUnderYellow: data.NewData.Flag_Yellow > 0,
                     lastLapTime: data.NewData.LastLapTime);
             }
             catch { /* defensive: ignore one-off field-shape errors */ }
@@ -109,9 +110,11 @@ namespace PitStrategy.Plugin
                 _publisher?.Publish(_latest, state.CurrentLap);
                 if (_settings.EnableFrameDump) DumpFrame(state, _latest);
             }
-            catch (Exception ex)
+            catch
             {
-                SimHub.Logging.Current.Error($"PitStrategy: {ex}");
+                // Swallow engine exceptions; the plugin should never bring SimHub down.
+                // TODO: route to a SimHub logger once we identify which DLL ships it
+                // (Logging class isn't in SimHub.Plugins.dll on this version).
             }
         }
 
@@ -185,9 +188,9 @@ namespace PitStrategy.Plugin
                 File.WriteAllText(file, JsonConvert.SerializeObject(payload, Formatting.Indented));
                 _settings.LastFrameDumpPath = file;
             }
-            catch (Exception ex)
+            catch
             {
-                SimHub.Logging.Current.Warn($"PitStrategy frame-dump failed: {ex.Message}");
+                // best-effort frame dump
             }
         }
     }

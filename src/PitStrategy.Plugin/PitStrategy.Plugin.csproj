@@ -37,6 +37,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Microsoft.CSharp is needed for the C# `dynamic` keyword on net48. -->
+    <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Xaml" />
     <Reference Include="WindowsBase" />
