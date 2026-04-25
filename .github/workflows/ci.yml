@@ -70,8 +70,15 @@ jobs:
             throw "SimHub zip download too small ($size bytes) — likely a redirect or 404"
           }
 
+          # Inspect the zip's magic bytes first — SimHub sometimes ships a self-extracting
+          # exe with a .zip extension, which PowerShell's Expand-Archive silently rejects.
+          $magic = [System.IO.File]::ReadAllBytes("simhub.zip")[0..3] | ForEach-Object { [char]$_ }
+          Write-Host "Magic bytes: $($magic -join '')"
+
           New-Item -ItemType Directory -Force -Path simhub-extract | Out-Null
-          Expand-Archive -Path simhub.zip -DestinationPath simhub-extract -Force
+          # 7z (preinstalled on windows-latest) handles standard zips, SFX exes, and 7z archives.
+          & 7z x simhub.zip -osimhub-extract -y -bd 1>$null
+          if ($LASTEXITCODE -ne 0) { throw "7z extraction failed with exit $LASTEXITCODE" }
 
           Write-Host "── Top of extracted zip ─────────────────────────────────────────"
           Get-ChildItem simhub-extract -Depth 1 | Format-Table Name, Length, FullName -AutoSize
