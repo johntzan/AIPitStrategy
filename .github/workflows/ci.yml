@@ -50,15 +50,41 @@ jobs:
         if: steps.cache-sdk.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
+          $ProgressPreference = 'SilentlyContinue'
           $url = "${{ steps.simhub.outputs.url }}"
           Write-Host "Downloading $url"
           Invoke-WebRequest -Uri $url -OutFile simhub.zip -UseBasicParsing
+          $size = (Get-Item simhub.zip).Length
+          Write-Host "Downloaded $size bytes"
+          if ($size -lt 50_000_000) {
+            Write-Host "First 256 bytes (likely an HTML redirect or error page):"
+            Get-Content simhub.zip -TotalCount 1 -Encoding Byte | Select-Object -First 256 | ForEach-Object { [char]$_ } | Join-String -Separator ''
+            throw "SimHub zip download too small ($size bytes) — likely a redirect or 404"
+          }
+
           New-Item -ItemType Directory -Force -Path simhub-extract | Out-Null
-          Expand-Archive -Path simhub.zip -DestinationPath simhub-extract
-          $plugins = Get-ChildItem simhub-extract -Recurse -Filter "SimHub.Plugins.dll"   | Select-Object -First 1
-          $reader  = Get-ChildItem simhub-extract -Recurse -Filter "GameReaderCommon.dll" | Select-Object -First 1
+          Expand-Archive -Path simhub.zip -DestinationPath simhub-extract -Force
+
+          Write-Host "── Top of extracted zip ─────────────────────────────────────────"
+          Get-ChildItem simhub-extract -Depth 1 | Format-Table Name, Length, FullName -AutoSize
+
+          $allDlls = Get-ChildItem simhub-extract -Recurse -Filter "*.dll"
+          Write-Host "── Found $($allDlls.Count) DLL(s) in the extracted tree ─────────"
+          $allDlls | Select-Object -First 20 | ForEach-Object { Write-Host "  $($_.FullName)" }
+
+          # Sometimes SimHub ships a nested setup .exe rather than a portable layout —
+          # if so, our DLL search will fail and we need a different approach.
+          $allExes = Get-ChildItem simhub-extract -Recurse -Filter "*.exe"
+          if ($allExes.Count -gt 0) {
+            Write-Host "── EXE files found (first 5) ────────────────────────────────────"
+            $allExes | Select-Object -First 5 | ForEach-Object { Write-Host "  $($_.FullName)" }
+          }
+
+          $plugins = $allDlls | Where-Object { $_.Name -ieq "SimHub.Plugins.dll" } | Select-Object -First 1
+          $reader  = $allDlls | Where-Object { $_.Name -ieq "GameReaderCommon.dll" } | Select-Object -First 1
           if (-not $plugins) { throw "SimHub.Plugins.dll not found in SimHub release zip" }
           if (-not $reader)  { throw "GameReaderCommon.dll not found in SimHub release zip" }
+
           New-Item -ItemType Directory -Force -Path lib/simhub-sdk | Out-Null
           Copy-Item $plugins.FullName lib/simhub-sdk/ -Force
           Copy-Item $reader.FullName  lib/simhub-sdk/ -Force
