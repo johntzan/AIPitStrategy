@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>PitStrategy.Core</RootNamespace>
+    <AssemblyName>PitStrategy.Core</AssemblyName>
+    <Description>Pure-logic core library for the PitStrategy SimHub plugin: race state, fuel tracking, pit-loss model, pit window, traffic projection, and decision engine.</Description>
+  </PropertyGroup>
+
+</Project>

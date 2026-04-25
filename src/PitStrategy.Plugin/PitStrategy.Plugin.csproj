@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>false</UseWindowsForms>
+    <AssemblyName>PitStrategy</AssemblyName>
+    <RootNamespace>PitStrategy.Plugin</RootNamespace>
+    <Platforms>AnyCPU</Platforms>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(OS)' != 'Windows_NT'">
+    <!-- Stub on non-Windows so `dotnet build` on the solution doesn't try to build net48. -->
+    <NoBuild>true</NoBuild>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PitStrategy.Core\PitStrategy.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="SimHub.Plugins">
+      <HintPath>..\..\lib\simhub-sdk\SimHub.Plugins.dll</HintPath>
+      <Private>false</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="GameReaderCommon">
+      <HintPath>..\..\lib\simhub-sdk\GameReaderCommon.dll</HintPath>
+      <Private>false</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Xaml" />
+    <Reference Include="WindowsBase" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <Target Name="DeployToSimHub" AfterTargets="Build" Condition="'$(Configuration)' == 'Release' And '$(OS)' == 'Windows_NT' And Exists('C:\Program Files (x86)\SimHub\')">
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="C:\Program Files (x86)\SimHub\" SkipUnchangedFiles="true" />
+    <Message Text="Deployed $(TargetFileName) to C:\Program Files (x86)\SimHub\" Importance="high" />
+  </Target>
+
+</Project>

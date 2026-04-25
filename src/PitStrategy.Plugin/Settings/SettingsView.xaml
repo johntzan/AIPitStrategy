@@ -1,0 +1,99 @@
+<UserControl x:Class="PitStrategy.Plugin.Settings.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d"
+             d:DesignHeight="600" d:DesignWidth="700">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="16">
+      <TextBlock Text="Pit Strategy Settings" FontSize="20" FontWeight="Bold" Margin="0,0,0,16" />
+
+      <!-- Vehicle defaults -->
+      <Expander Header="Vehicle defaults" IsExpanded="True" Margin="0,0,0,8">
+        <StackPanel Margin="8,8,0,8">
+          <CheckBox IsChecked="{Binding OverrideTankCapacity}" Content="Override tank capacity"/>
+          <DockPanel Margin="0,4,0,0">
+            <TextBlock Text="Tank capacity (L):" Width="180"/>
+            <TextBox Text="{Binding TankCapacityLitersOverride}" Width="100" />
+          </DockPanel>
+          <CheckBox IsChecked="{Binding OverrideFuelPerLap}" Content="Override rolling fuel-per-lap" Margin="0,8,0,0"/>
+          <DockPanel Margin="0,4,0,0">
+            <TextBlock Text="Fuel per lap (L):" Width="180"/>
+            <TextBox Text="{Binding FuelPerLapOverride}" Width="100" />
+          </DockPanel>
+        </StackPanel>
+      </Expander>
+
+      <!-- Strategy heuristics -->
+      <Expander Header="Strategy heuristics" IsExpanded="True" Margin="0,0,0,8">
+        <StackPanel Margin="8,8,0,8">
+          <DockPanel Margin="0,4,0,0">
+            <TextBlock Text="Fuel safety margin (laps):" Width="220"/>
+            <TextBox Text="{Binding FuelSafetyMarginLaps}" Width="100" />
+          </DockPanel>
+          <DockPanel Margin="0,4,0,0">
+            <TextBlock Text="Fuel rolling window (laps):" Width="220"/>
+            <TextBox Text="{Binding FuelRollingWindowLaps}" Width="100" />
+          </DockPanel>
+          <DockPanel Margin="0,4,0,0">
+            <TextBlock Text="Fuel outlier Z-score:" Width="220"/>
+            <TextBox Text="{Binding FuelOutlierZScore}" Width="100" />
+          </DockPanel>
+          <DockPanel Margin="0,4,0,0">
+            <TextBlock Text="Undercut threshold (s):" Width="220"/>
+            <TextBox Text="{Binding UndercutThresholdSeconds}" Width="100" />
+          </DockPanel>
+          <DockPanel Margin="0,4,0,0">
+            <TextBlock Text="Clean-air threshold (s):" Width="220"/>
+            <TextBox Text="{Binding CleanAirThresholdSeconds}" Width="100" />
+          </DockPanel>
+          <DockPanel Margin="0,4,0,0">
+            <TextBlock Text="Clean-air look-ahead (laps):" Width="220"/>
+            <TextBox Text="{Binding CleanAirLookaheadLaps}" Width="100" />
+          </DockPanel>
+          <DockPanel Margin="0,4,0,0">
+            <TextBlock Text="FCY pit savings (fraction):" Width="220"/>
+            <TextBox Text="{Binding FcyPitTimeSavingsFraction}" Width="100" />
+          </DockPanel>
+        </StackPanel>
+      </Expander>
+
+      <!-- Pit-loss config -->
+      <Expander Header="Pit-loss config (per-track)" IsExpanded="False" Margin="0,0,0,8">
+        <StackPanel Margin="8,8,0,8">
+          <CheckBox IsChecked="{Binding OverridePitLaneLength}" Content="Override pit-lane length"/>
+          <DockPanel Margin="0,4,0,0">
+            <TextBlock Text="Pit-lane length (m):" Width="220"/>
+            <TextBox Text="{Binding PitLaneLengthMetersOverride}" Width="100" />
+          </DockPanel>
+          <DockPanel Margin="0,4,0,0">
+            <TextBlock Text="Fuel flow (L/s):" Width="220"/>
+            <TextBox Text="{Binding FuelFlowLitersPerSecond}" Width="100" />
+          </DockPanel>
+          <DockPanel Margin="0,4,0,0">
+            <TextBlock Text="Tire change service (s):" Width="220"/>
+            <TextBox Text="{Binding TireChangeServiceSeconds}" Width="100" />
+          </DockPanel>
+          <DockPanel Margin="0,4,0,0">
+            <TextBlock Text="Pit entry delta (s):" Width="220"/>
+            <TextBox Text="{Binding PitEntryDeltaSeconds}" Width="100" />
+          </DockPanel>
+          <DockPanel Margin="0,4,0,0">
+            <TextBlock Text="Pit exit delta (s):" Width="220"/>
+            <TextBox Text="{Binding PitExitDeltaSeconds}" Width="100" />
+          </DockPanel>
+        </StackPanel>
+      </Expander>
+
+      <!-- Diagnostics -->
+      <Expander Header="Diagnostics" IsExpanded="False" Margin="0,0,0,8">
+        <StackPanel Margin="8,8,0,8">
+          <CheckBox IsChecked="{Binding EnableFrameDump}" Content="Auto-dump every engine tick to JSON"/>
+          <TextBlock Text="Last dump:" Margin="0,8,0,0"/>
+          <TextBlock Text="{Binding LastFrameDumpPath}" TextWrapping="Wrap" Margin="0,0,0,0" Foreground="Gray"/>
+        </StackPanel>
+      </Expander>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

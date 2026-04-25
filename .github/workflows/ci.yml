@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: Build & Test (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore Core + Tests
+        run: |
+          dotnet restore src/PitStrategy.Core/PitStrategy.Core.csproj
+          dotnet restore tests/PitStrategy.Core.Tests/PitStrategy.Core.Tests.csproj
+
+      - name: Build Core
+        run: dotnet build src/PitStrategy.Core/PitStrategy.Core.csproj -c Release --no-restore
+
+      - name: Test Core
+        run: dotnet test tests/PitStrategy.Core.Tests/PitStrategy.Core.Tests.csproj -c Release --no-restore --logger "trx;LogFileName=core.trx"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: tests/PitStrategy.Core.Tests/TestResults/
+
+      # The plugin needs SimHub.Plugins.dll + GameReaderCommon.dll vendored under
+      # lib/simhub-sdk/. They are not committed (license-uncertain). The plugin job
+      # only runs when those secrets are present in the repo.
+      - name: Check for vendored SimHub SDK
+        id: sdk_check
+        shell: pwsh
+        run: |
+          if ((Test-Path "lib/simhub-sdk/SimHub.Plugins.dll") -and (Test-Path "lib/simhub-sdk/GameReaderCommon.dll")) {
+            echo "have_sdk=true" >> $env:GITHUB_OUTPUT
+          } else {
+            echo "have_sdk=false" >> $env:GITHUB_OUTPUT
+            Write-Host "SimHub SDK DLLs not present — skipping plugin build."
+          }
+
+      - name: Build Plugin
+        if: steps.sdk_check.outputs.have_sdk == 'true'
+        run: dotnet build src/PitStrategy.Plugin/PitStrategy.Plugin.csproj -c Release --no-restore
+
+      - name: Package release zip
+        if: steps.sdk_check.outputs.have_sdk == 'true' && startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME
+          $stage = "package-stage"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "src/PitStrategy.Plugin/bin/Release/PitStrategy.dll" $stage/
+          if (Test-Path "dashboards/PitStrategy.simhubdash") { Copy-Item "dashboards/PitStrategy.simhubdash" $stage/ }
+          if (Test-Path "docs/INSTALL.md")                  { Copy-Item "docs/INSTALL.md"                  $stage/ }
+          if (Test-Path "README.md")                        { Copy-Item "README.md"                        $stage/ }
+          $zipName = "PitStrategy-$version-windows.zip"
+          Compress-Archive -Path "$stage/*" -DestinationPath $zipName
+          echo "ZIP_NAME=$zipName" >> $env:GITHUB_ENV
+
+      - name: Upload release zip artifact
+        if: steps.sdk_check.outputs.have_sdk == 'true' && startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: PitStrategy-windows
+          path: ${{ env.ZIP_NAME }}
+
+      - name: Create GitHub Release
+        if: steps.sdk_check.outputs.have_sdk == 'true' && startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ZIP_NAME }}
+          generate_release_notes: true

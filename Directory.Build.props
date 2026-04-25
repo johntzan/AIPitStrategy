@@ -1,0 +1,10 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>10</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <Version>0.1.0</Version>
+    <Authors>PitStrategy contributors</Authors>
+    <Product>PitStrategy</Product>
+  </PropertyGroup>
+</Project>

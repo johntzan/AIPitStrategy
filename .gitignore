@@ -1,0 +1,27 @@
+# Build output
+bin/
+obj/
+out/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Tests
+TestResults/
+*.coverage
+coverage.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# SimHub vendored DLLs (license — Windows tester drops their own)
+lib/simhub-sdk/*.dll
+!lib/simhub-sdk/.gitkeep
+
+# Replay frame dumps captured for debugging
+tests/PitStrategy.Core.Tests/Fixtures/captured/*.json
