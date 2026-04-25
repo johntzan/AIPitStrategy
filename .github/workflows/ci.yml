@@ -110,6 +110,15 @@ jobs:
           Write-Host "Vendored SimHub SDK DLLs:"
           Get-ChildItem lib/simhub-sdk/ | Format-Table Name, Length -AutoSize
 
+      - name: Upload SimHub SDK DLLs (local inspection)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simhub-sdk-dlls
+          path: lib/simhub-sdk/
+          retention-days: 1
+          if-no-files-found: warn
+
       # ── Build & test ─────────────────────────────────────────────────────────────────
       - name: Restore solution
         run: dotnet restore PitStrategy.sln
