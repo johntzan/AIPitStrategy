@@ -13,6 +13,10 @@ jobs:
     name: Build, test, package
     runs-on: windows-latest
     timeout-minutes: 25
+    # Needed by softprops/action-gh-release to publish a GitHub Release on tag pushes.
+    # The default GITHUB_TOKEN is read-only for `contents` since 2023.
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
