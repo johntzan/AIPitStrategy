@@ -64,7 +64,7 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile simhub.zip -UseBasicParsing
           $size = (Get-Item simhub.zip).Length
           Write-Host "Downloaded $size bytes"
-          if ($size -lt 50_000_000) {
+          if ($size -lt 50000000) {
             Write-Host "First 256 bytes (likely an HTML redirect or error page):"
             Get-Content simhub.zip -TotalCount 1 -Encoding Byte | Select-Object -First 256 | ForEach-Object { [char]$_ } | Join-String -Separator ''
             throw "SimHub zip download too small ($size bytes) — likely a redirect or 404"
