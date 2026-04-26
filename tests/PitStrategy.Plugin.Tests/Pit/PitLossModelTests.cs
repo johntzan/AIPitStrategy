@@ -1,7 +1,7 @@
 using PitStrategy.Core.Inputs;
 using PitStrategy.Core.Pit;
 
-namespace PitStrategy.Core.Tests.Pit;
+namespace PitStrategy.Plugin.Tests.Pit;
 
 public class PitLossModelTests
 {

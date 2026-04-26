@@ -1,7 +1,7 @@
 using System;
 using PitStrategy.Core.Fuel;
 
-namespace PitStrategy.Core.Tests.Fuel;
+namespace PitStrategy.Plugin.Tests.Fuel;
 
 public class FuelTrackerTests
 {

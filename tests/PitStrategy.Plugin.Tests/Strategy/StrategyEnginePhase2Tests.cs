@@ -4,7 +4,7 @@ using PitStrategy.Core.Inputs;
 using PitStrategy.Core.Outputs;
 using PitStrategy.Core.Strategy;
 
-namespace PitStrategy.Core.Tests.Strategy;
+namespace PitStrategy.Plugin.Tests.Strategy;
 
 public class StrategyEnginePhase2Tests
 {

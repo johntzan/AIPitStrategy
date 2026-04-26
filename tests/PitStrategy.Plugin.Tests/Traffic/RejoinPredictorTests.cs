@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using PitStrategy.Core.Inputs;
 using PitStrategy.Core.Traffic;
 
-namespace PitStrategy.Core.Tests.Traffic;
+namespace PitStrategy.Plugin.Tests.Traffic;
 
 public class RejoinPredictorTests
 {

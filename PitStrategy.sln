@@ -5,11 +5,9 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{1B25C038-2AD3-47F3-AC0D-9E302141AC6E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PitStrategy.Core", "src\PitStrategy.Core\PitStrategy.Core.csproj", "{410DF54F-9121-4375-97FD-547396E97A7E}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{14EF3117-1C18-4880-98C6-E6EC0682805A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PitStrategy.Core.Tests", "tests\PitStrategy.Core.Tests\PitStrategy.Core.Tests.csproj", "{51D8C5D2-C936-4356-91E3-80543F061221}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PitStrategy.Plugin.Tests", "tests\PitStrategy.Plugin.Tests\PitStrategy.Plugin.Tests.csproj", "{51D8C5D2-C936-4356-91E3-80543F061221}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PitStrategy.Plugin", "src\PitStrategy.Plugin\PitStrategy.Plugin.csproj", "{76DD725B-1C40-46C5-9CC4-66F91341BB02}"
 EndProject
@@ -23,18 +21,6 @@ Global
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{410DF54F-9121-4375-97FD-547396E97A7E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{410DF54F-9121-4375-97FD-547396E97A7E}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{410DF54F-9121-4375-97FD-547396E97A7E}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{410DF54F-9121-4375-97FD-547396E97A7E}.Debug|x64.Build.0 = Debug|Any CPU
-		{410DF54F-9121-4375-97FD-547396E97A7E}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{410DF54F-9121-4375-97FD-547396E97A7E}.Debug|x86.Build.0 = Debug|Any CPU
-		{410DF54F-9121-4375-97FD-547396E97A7E}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{410DF54F-9121-4375-97FD-547396E97A7E}.Release|Any CPU.Build.0 = Release|Any CPU
-		{410DF54F-9121-4375-97FD-547396E97A7E}.Release|x64.ActiveCfg = Release|Any CPU
-		{410DF54F-9121-4375-97FD-547396E97A7E}.Release|x64.Build.0 = Release|Any CPU
-		{410DF54F-9121-4375-97FD-547396E97A7E}.Release|x86.ActiveCfg = Release|Any CPU
-		{410DF54F-9121-4375-97FD-547396E97A7E}.Release|x86.Build.0 = Release|Any CPU
 		{51D8C5D2-C936-4356-91E3-80543F061221}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{51D8C5D2-C936-4356-91E3-80543F061221}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{51D8C5D2-C936-4356-91E3-80543F061221}.Debug|x64.ActiveCfg = Debug|Any CPU
@@ -64,7 +50,6 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
-		{410DF54F-9121-4375-97FD-547396E97A7E} = {1B25C038-2AD3-47F3-AC0D-9E302141AC6E}
 		{51D8C5D2-C936-4356-91E3-80543F061221} = {14EF3117-1C18-4880-98C6-E6EC0682805A}
 		{76DD725B-1C40-46C5-9CC4-66F91341BB02} = {1B25C038-2AD3-47F3-AC0D-9E302141AC6E}
 	EndGlobalSection

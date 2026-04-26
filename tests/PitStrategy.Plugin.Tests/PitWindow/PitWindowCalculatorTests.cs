@@ -2,7 +2,7 @@ using System;
 using PitStrategy.Core.Inputs;
 using PitStrategy.Core.PitWindow;
 
-namespace PitStrategy.Core.Tests.PitWindow;
+namespace PitStrategy.Plugin.Tests.PitWindow;
 
 public class PitWindowCalculatorTests
 {

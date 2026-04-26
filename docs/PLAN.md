@@ -9,7 +9,8 @@ A design document for a SimHub plugin that runs a hybrid rule-based + Monte Carl
 ### What's shipping
 
 - **Phase 1 + Phase 2 implemented and CI-green.** Phase 3 (Monte Carlo, endurance polish) deferred.
-- **38 passing Core unit + golden tests** (xUnit on net8.0).
+- **38 passing unit + golden tests** (xUnit on net48; runs in CI on `windows-latest`).
+- **Single-DLL deployment** — pure-logic types live in the same assembly as the SimHub shim, so the install is a single `PitStrategy.dll` drop into `C:\Program Files (x86)\SimHub\`. (v0.1.0 shipped them as separate DLLs and broke at load time with `FileNotFoundException` on `PitStrategy.Core` — folded into the plugin in v0.1.1.)
 - **Plugin DLL builds cleanly on `windows-latest`** with the actual SimHub SDK fetched at CI time — no manual DLL vendoring required.
 - **Downloadable artifacts on every push to `main`** and every manual `workflow_dispatch`:
   - `PitStrategy-dev-<sha>-dll` — bare DLL
@@ -21,10 +22,12 @@ A design document for a SimHub plugin that runs a hybrid rule-based + Monte Carl
 ### Quick-start commands
 
 ```bash
-# Local dev — Core library + tests (38 tests, ~50 ms)
-dotnet test tests/PitStrategy.Core.Tests/PitStrategy.Core.Tests.csproj
-# Build only:
-dotnet build src/PitStrategy.Core/PitStrategy.Core.csproj
+# Build + test (Windows only — net48)
+dotnet build PitStrategy.sln -c Release
+dotnet test  tests/PitStrategy.Plugin.Tests/PitStrategy.Plugin.Tests.csproj -c Release
+
+# macOS / Linux — restore only (build/test would need .NET Framework)
+dotnet restore PitStrategy.sln
 
 # Watch latest CI run
 gh run list --repo johntzan/AIPitStrategy --limit 1
@@ -132,8 +135,8 @@ public interface IWPFSettingsV2 : IWPFSettings {
 2. **The SimHub release zip is NOT a portable layout** — it contains a single `SimHubSetup_<version>.exe` (Inno Setup 6.4.3 installer). `Expand-Archive` and `7z x` both extract just the EXE. The actual SDK DLLs only appear after running the installer with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOICONS`. The `windows-latest` runner has admin rights, so the install succeeds at `C:\Program Files (x86)\SimHub\`.
 3. **GitHub API anonymous rate limit (60/hr) is shared across the Azure GitHub-runner IP pool** — anonymous `Invoke-RestMethod` to `api.github.com` will get rate-limited fast on a repo that runs CI a lot. Always pass `${{ secrets.GITHUB_TOKEN }}` as an `Authorization: Bearer …` header (1,000/hr per repo).
 4. **`Microsoft.CSharp` reference is required for the C# `dynamic` keyword on net48** — SDK-style csprojs don't include it by default like .NET Core does. Add `<Reference Include="Microsoft.CSharp" />`.
-5. **macOS Homebrew `dotnet`** ships only .NET 10. `dotnet test` of `net8.0` projects needs a real .NET 8 runtime — install one from <https://dotnet.microsoft.com/download/dotnet/8.0> or use one bundled with another product (Unity, UE5, Visual Studio for Mac). Build alone works on .NET 10 thanks to `global.json`'s `rollForward: major`.
-6. **`brew install innoextract` ships v1.9** which only supports Inno Setup ≤ 6.0.5; SimHub uses 6.4.3. Don't try to extract on macOS — use the CI-uploaded `simhub-sdk-dlls` artifact for local API inspection.
+5. **`brew install innoextract` ships v1.9** which only supports Inno Setup ≤ 6.0.5; SimHub uses 6.4.3. Don't try to extract on macOS — use the CI-uploaded `simhub-sdk-dlls` artifact for local API inspection.
+6. **Whole project is now Windows-only at build time** (net48 + WPF). macOS/Linux can `dotnet restore` to validate the package graph; both csprojs set `<NoBuild>true</NoBuild>` on non-Windows so `dotnet build` of the solution is a no-op there.
 
 ### Known TODOs (Phase 3 + cleanup)
 
@@ -143,7 +146,7 @@ public interface IWPFSettingsV2 : IWPFSettings {
 - **Pit-lane length** — currently a 350 m default with `OverridePitLaneLength` setting. Should read `WeekendInfo.TrackPitLaneTotalLength` from the iRacing SessionInfo YAML.
 - **Pit-lane speed limit** — currently hardcoded 60 km/h. Should read `WeekendInfo.TrackPitSpeedLimit`.
 - **`SimHub.Logging`** — find which DLL exposes it (likely `WoteverCommon.dll`), vendor that DLL alongside the SDK fetch, and wire `Logging.Current.Info(...)` into the plugin's catch blocks.
-- **Phase 3** — Monte Carlo simulator (`src/PitStrategy.Core/Simulation/`), endurance refinements (driver-swap detection, multi-class rivals, weather windows), MC-augmented `Confidence` on the headline `PitDecision`.
+- **Phase 3** — Monte Carlo simulator (`src/PitStrategy.Plugin/Simulation/`), endurance refinements (driver-swap detection, multi-class rivals, weather windows), MC-augmented `Confidence` on the headline `PitDecision`.
 
 ### How to pick this up in a fresh session
 
@@ -153,7 +156,7 @@ public interface IWPFSettingsV2 : IWPFSettings {
 4. If you need to verify a SimHub or iRacing API before changing plugin code, decompile the actual DLLs:
    - Pull the latest CI's SDK artifact: `gh run download <latest-run-id> -n simhub-sdk-dlls -D scratch/simhub-sdk --repo johntzan/AIPitStrategy`
    - Decompile what you need: `ilspycmd scratch/simhub-sdk/SimHub.Plugins.dll --type SimHub.Plugins.<X>`
-5. The Core library has 38 tests; run them with `dotnet test`. The Plugin DLL only builds via CI on `windows-latest` (or on a real Windows machine).
+5. The Plugin has 38 tests; they run on `windows-latest` in CI (or on a real Windows machine). macOS dev is restore-only.
 6. Don't `git filter-branch` or force-push to rewrite history — make new commits forward-only.
 
 ### CI iteration log
@@ -193,43 +196,36 @@ PitStrategy/
 ├── PitStrategy.sln
 ├── Directory.Build.props
 ├── src/
-│   ├── PitStrategy.Core/                    # netstandard2.0 — pure logic, unit-testable
-│   │   ├── Inputs/                          # RaceState, RaceConfig, RivalState, TireWearSnapshot, WeatherSnapshot
-│   │   ├── Outputs/                         # PitDecision, PitLossBreakdown, TrafficProjection, ComparedStrategy, UndercutAlert, FcyOpportunity
-│   │   ├── Fuel/FuelTracker.cs              # rolling 5-lap avg from FuelLevel deltas
-│   │   ├── Tire/TireDegModel.cs             # linear + cliff
-│   │   ├── Pit/PitLossModel.cs              # first-class total-pit-loss decomposition
-│   │   ├── Traffic/RejoinPredictor.cs       # where you'll be after pit; clean air vs traffic
-│   │   ├── PitWindow/PitWindowCalculator.cs # earliest/latest legal lap given fuel
-│   │   ├── Strategy/StrategyEngine.cs       # orchestrator, returns PitDecision
-│   │   ├── Simulation/                      # MonteCarloSimulator (Phase 3)
-│   │   ├── Analysis/                        # UndercutDetector, FcyAnalyzer
-│   │   └── Util/                            # RollingWindow<T>, seedable IRandomSource (PCG/xoshiro)
-│   │
-│   └── PitStrategy.Plugin/                  # net48 — SimHub DLL
+│   └── PitStrategy.Plugin/                  # net48 — single SimHub DLL
+│       ├── Inputs/                          # RaceState, RaceConfig, RivalState, TireWearSnapshot, WeatherSnapshot
+│       ├── Outputs/                         # PitDecision, PitLossBreakdown, TrafficProjection, ComparedStrategy, UndercutAlert, FcyOpportunity
+│       ├── Fuel/FuelTracker.cs              # rolling 5-lap avg from FuelLevel deltas
+│       ├── Pit/PitLossModel.cs              # first-class total-pit-loss decomposition
+│       ├── Traffic/RejoinPredictor.cs       # where you'll be after pit; clean air vs traffic
+│       ├── PitWindow/PitWindowCalculator.cs # earliest/latest legal lap given fuel
+│       ├── Strategy/StrategyEngine.cs       # orchestrator, returns PitDecision
+│       ├── Simulation/                      # MonteCarloSimulator (Phase 3)
+│       ├── Analysis/                        # UndercutDetector, FcyAnalyzer
+│       ├── Util/                            # RollingWindow<T>, seedable IRandomSource (PCG/xoshiro)
 │       ├── PitStrategyPlugin.cs             # IPlugin, IDataPlugin, IWPFSettingsV2
 │       ├── IRacingMapper.cs                 # DataSampleEx + GameData → RaceState
 │       ├── PropertyPublisher.cs             # owns AddProperty/SetPropertyValue
-│       ├── Settings/{PluginSettings.cs, SettingsView.xaml(.cs)}
-│       └── PluginActions.cs                 # RunSimulation, ResetFuelTracker, ToggleFuelSaving
+│       └── Settings/{PluginSettings.cs, SettingsView.xaml(.cs)}
 │
 ├── tests/
-│   └── PitStrategy.Core.Tests/              # xUnit on net8.0
-│       ├── Fuel/, Strategy/, Pit/, Traffic/, Simulation/
+│   └── PitStrategy.Plugin.Tests/            # xUnit on net48 — Windows-only
+│       ├── Fuel/, Strategy/, Pit/, Traffic/
 │       └── Fixtures/                        # JSON race scenarios (golden tests; not yet populated)
 │
 ├── dashboards/
 │   └── PitStrategy.simhubdash               # JSON dashboard exported from Dash Studio (template only)
-│
-├── tools/
-│   └── PitStrategy.ReplayHarness/           # optional: replay JSON frame dumps locally (planned)
 │
 ├── lib/simhub-sdk/                          # vendored SimHub.Plugins.dll, GameReaderCommon.dll
 ├── .github/workflows/ci.yml                 # windows-latest, build + test + package
 └── docs/{ARCHITECTURE.md, INSTALL.md, IRACING-FIELDS.md, PLAN.md}
 ```
 
-Why two source projects: keeping the strategy logic in `PitStrategy.Core` (`netstandard2.0`) lets unit tests run on `net8.0` with no SimHub or iRacing dependencies — fast feedback, hundreds of tests in seconds. The plugin shim is just field mapping + property publishing. `netstandard2.0` is the only target the `net48` plugin can consume.
+History: pre-v0.1.1 split the strategy logic into a separate `PitStrategy.Core` (`netstandard2.0`) project so unit tests could run cross-platform on `net8.0`. That made the install a multi-DLL drop, which broke at SimHub load time when only `PitStrategy.dll` was redistributed. v0.1.1 folded everything into the Plugin assembly to ship as a single file. Tests now target `net48` and run on Windows only, in CI. Pure-logic types still live under `PitStrategy.Core.*` namespaces.
 
 ---
 
@@ -404,16 +400,19 @@ Ship as `dashboards/PitStrategy.simhubdash` (JSON file, no build step required).
 
 ## 5. Build & test workflow ✅ implemented
 
-### Local — Core library + tests only
+### Local — build + test (Windows)
 
-```bash
-# Tests need a real .NET 8 runtime (the test target is net8.0).
-# On macOS, brew dotnet ships only .NET 10 — install .NET 8 SDK separately or use one bundled with Unity / UE / VS for Mac.
-dotnet test tests/PitStrategy.Core.Tests/PitStrategy.Core.Tests.csproj
-dotnet build src/PitStrategy.Core/PitStrategy.Core.csproj
+```powershell
+dotnet build PitStrategy.sln -c Release
+dotnet test  tests\PitStrategy.Plugin.Tests\PitStrategy.Plugin.Tests.csproj -c Release
 ```
 
-The plugin DLL (`net48`, WPF) doesn't build on macOS — Mac is purely for editing the Core library and writing tests.
+```bash
+# macOS / Linux — restore only
+dotnet restore PitStrategy.sln
+```
+
+The whole project (plugin + tests) is `net48` + WPF, so building and testing both require Windows. Both csprojs set `<NoBuild>true</NoBuild>` on non-Windows so `dotnet build` of the solution is a no-op there.
 
 ### CI (single workflow, `windows-latest`) — `.github/workflows/ci.yml`
 
@@ -428,10 +427,9 @@ Pipeline:
 5. **Download + silent install** — `Invoke-WebRequest` the 217 MB zip → `7z x` to get `SimHubSetup_<v>.exe` → `Start-Process` it with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOICONS -Wait` → copy `SimHub.Plugins.dll` and `GameReaderCommon.dll` from `C:\Program Files (x86)\SimHub\` into `lib/simhub-sdk/`.
 6. **Upload `simhub-sdk-dlls` artifact** — `if: always()`, retention 1 day. Used to grab the SDK locally for `ilspycmd` decompilation.
 7. `dotnet restore PitStrategy.sln`
-8. `dotnet build src\PitStrategy.Core\PitStrategy.Core.csproj -c Release --no-restore`
-9. `dotnet test tests\PitStrategy.Core.Tests\PitStrategy.Core.Tests.csproj -c Release --logger "trx;LogFileName=core.trx"`
+8. `dotnet build PitStrategy.sln -c Release --no-restore`
+9. `dotnet test tests\PitStrategy.Plugin.Tests\PitStrategy.Plugin.Tests.csproj -c Release --no-build --logger "trx;LogFileName=plugin.trx"`
 10. Upload `test-results` artifact (`if: always()`).
-11. `dotnet build src\PitStrategy.Plugin\PitStrategy.Plugin.csproj -c Release --no-restore`
 12. **Compute version label**: `dev-<7-char-SHA>` on push/PR/manual; `<tag>` on tag push.
 13. **Stage release contents** into `package-stage/`: `PitStrategy.dll` + `PitStrategy.simhubdash.template.json` + `INSTALL.md` + `README.md`.
 14. **Upload two artifacts** (always):
@@ -477,7 +475,7 @@ The plugin has a `PitStrategy.Action.DumpFrame` action that writes the latest `R
 
 ### Phase 1 — MVP: rule-based pit-now/stay-out  ✅ done
 The driver can glance at the dashboard and see "PIT NOW" or "STAY OUT" with a reason.
-- ✅ `PitStrategy.Core`: `RaceState`, `RaceConfig`, `FuelTracker`, `PitLossModel`, `PitWindowCalculator`, rule-based `StrategyEngine.Decide`.
+- ✅ Pure-logic types under `PitStrategy.Core.*` namespaces in the Plugin assembly: `RaceState`, `RaceConfig`, `FuelTracker`, `PitLossModel`, `PitWindowCalculator`, rule-based `StrategyEngine.Decide`.
 - ✅ `PitStrategy.Plugin`: full `IPlugin/IDataPlugin/IWPFSettingsV2` skeleton, frame-dump action, WPF settings page.
 - ✅ 38 tests passing (target was 50+; the existing surface is well-covered, more can be added incrementally).
 - ✅ Dashboard JSON template with example NCalc bindings.
@@ -487,8 +485,8 @@ The driver can glance at the dashboard and see "PIT NOW" or "STAY OUT" with a re
 
 ### Phase 2 — Traffic + tactical alerts  ✅ done
 The driver gets clean-air and tactical-undercut signals.
-- ✅ `PitStrategy.Core/Traffic/RejoinPredictor.cs` — full implementation, including `CleanAirLapIfWait` lookahead.
-- ✅ `PitStrategy.Core/Analysis/{UndercutDetector, FcyAnalyzer}.cs`.
+- ✅ `src/PitStrategy.Plugin/Traffic/RejoinPredictor.cs` — full implementation, including `CleanAirLapIfWait` lookahead.
+- ✅ `src/PitStrategy.Plugin/Analysis/{UndercutDetector, FcyAnalyzer}.cs`.
 - ✅ Decision tree includes rules 3–5 (FCY, undercut, clean-air timing).
 - ✅ `PitDecisionKind.PitNextLap` reachable.
 - ✅ New properties: `Traffic.*`, `Undercut.*`, `Fcy.*`.
@@ -496,7 +494,7 @@ The driver gets clean-air and tactical-undercut signals.
 - **Exit criterion**: against a fixture where rival is 1.5 s ahead and 3 laps from pitting, decision flips to `PitNow` with `Undercut` populated; against a fixture where pitting now rejoins in traffic but waiting 2 laps rejoins in clean air, decision flips to `PitNextLap` with reason "Wait 2 laps — clean air".
 
 ### Phase 3 — Monte Carlo + endurance polish  ⏸ deferred
-- `PitStrategy.Core/Simulation/`: `MonteCarloSimulator`, `RaceLapSimulator`, `Distributions`.
+- `src/PitStrategy.Plugin/Simulation/`: `MonteCarloSimulator`, `RaceLapSimulator`, `Distributions`.
 - `RecommendWithSimulationAsync` runs MC across candidate strategies; updates `Confidence` on the headline `PitDecision` and populates `Strategy.*` diagnostic properties (the API surface and the `RunSimulation` action are already in place — they're just no-ops today).
 - Per-compound tire calibration learning from the driver's own first stint (also unblocks the `LFwearL/M/R` raw-frame access risk #6).
 - Driver-swap detection (resets pace baseline, not fuel tracker).
@@ -554,4 +552,4 @@ The path to validating Phase 1+2 end-to-end:
   ```
   Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
   ```
-- **Plugin testability**: the SimHub plugin is intentionally a thin shim. Anything load-bearing belongs in `PitStrategy.Core`, where it can be unit-tested cross-platform. New decisions go through `StrategyEngine`; new properties go through `PropertyPublisher`; new SimHub-specific quirks go in `IRacingMapper`.
+- **Plugin testability**: the SimHub-touching code is intentionally thin. Pure logic lives under `PitStrategy.Core.*` namespaces and is exercised by `tests/PitStrategy.Plugin.Tests/` — keep it free of `SimHub.Plugins`/`GameReaderCommon` references so it stays trivially testable. New decisions go through `StrategyEngine`; new properties go through `PropertyPublisher`; new SimHub-specific quirks go in `IRacingMapper`.

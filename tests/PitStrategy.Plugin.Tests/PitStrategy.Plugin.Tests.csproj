@@ -1,11 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net48</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <RootNamespace>PitStrategy.Core.Tests</RootNamespace>
+    <RootNamespace>PitStrategy.Plugin.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(OS)' != 'Windows_NT'">
+    <!-- net48 cannot build/test on macOS or Linux. Tests run in CI on windows-latest. -->
+    <NoBuild>true</NoBuild>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -22,7 +28,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\PitStrategy.Core\PitStrategy.Core.csproj" />
+    <ProjectReference Include="..\..\src\PitStrategy.Plugin\PitStrategy.Plugin.csproj" />
   </ItemGroup>
 
   <ItemGroup>

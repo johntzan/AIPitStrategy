@@ -18,36 +18,47 @@ PitStrategy/
 ├── Directory.Build.props                  # LangVersion=10, Nullable=enable
 ├── global.json                            # SDK 8.0.0 with rollForward: major
 ├── src/
-│   ├── PitStrategy.Core/                  # netstandard2.0 — pure logic, fully unit-tested
-│   │   ├── Inputs/                        # RaceState, RaceConfig, RivalState, etc.
-│   │   ├── Outputs/                       # PitDecision, PitLossBreakdown, TrafficProjection, ...
-│   │   ├── Fuel/, Pit/, PitWindow/        # math primitives
-│   │   ├── Strategy/StrategyEngine.cs     # orchestrator with 6-rule decision tree
-│   │   ├── Traffic/RejoinPredictor.cs
-│   │   ├── Analysis/{UndercutDetector,FcyAnalyzer}.cs
-│   │   └── Util/                          # IsExternalInit polyfill, RollingWindow, Statistics
-│   └── PitStrategy.Plugin/                # net48 — Windows-only SimHub DLL (thin shim)
-├── tests/PitStrategy.Core.Tests/          # xUnit on net8.0
+│   └── PitStrategy.Plugin/                # net48 — single Windows-only SimHub DLL
+│       ├── Inputs/                        # RaceState, RaceConfig, RivalState, etc. (PitStrategy.Core.* namespaces)
+│       ├── Outputs/                       # PitDecision, PitLossBreakdown, TrafficProjection, ...
+│       ├── Fuel/, Pit/, PitWindow/        # math primitives
+│       ├── Strategy/StrategyEngine.cs     # orchestrator with 6-rule decision tree
+│       ├── Traffic/RejoinPredictor.cs
+│       ├── Analysis/{UndercutDetector,FcyAnalyzer}.cs
+│       ├── Util/                          # IsExternalInit polyfill, RollingWindow, Statistics
+│       ├── Settings/                      # WPF settings page
+│       ├── PitStrategyPlugin.cs           # SimHub IDataPlugin entry point
+│       ├── PropertyPublisher.cs           # property registration + per-tick publish
+│       └── IRacingMapper.cs               # GameData → RaceState mapping
+├── tests/PitStrategy.Plugin.Tests/        # xUnit on net48 — Windows-only, runs in CI
 ├── dashboards/                            # SimHub Dash Studio templates
 ├── lib/simhub-sdk/                        # CI fetches SimHub.Plugins.dll + GameReaderCommon.dll here
 ├── docs/                                  # PLAN.md, INSTALL.md, IRACING-FIELDS.md
 └── .github/workflows/ci.yml               # windows-latest, auto-fetches SDK, builds + packages artifacts
 ```
 
+The pure-logic types live under `PitStrategy.Core.*` namespaces (`Inputs`, `Outputs`, `Fuel`, `Pit`, `PitWindow`, `Strategy`, `Traffic`, `Analysis`, `Util`) — namespaces preserved from when this was a separate project. Today they ship inside `PitStrategy.dll` so the end-user install is a single file drop.
+
 ## Build & test
 
-You only need `dotnet` for the Core library; the SimHub Plugin DLL targets `net48` and only builds on Windows (CI handles that).
+The whole project is now net48 + WPF, so building and testing requires Windows. macOS can `dotnet restore` to validate the package graph, but compile/test happens on `windows-latest` in CI.
 
-```bash
-# Restore + build the Core library + tests (works on macOS, Linux, Windows)
-dotnet build src/PitStrategy.Core/PitStrategy.Core.csproj
-dotnet test  tests/PitStrategy.Core.Tests/PitStrategy.Core.Tests.csproj
+```powershell
+# Windows
+dotnet build PitStrategy.sln -c Release
+dotnet test  tests\PitStrategy.Plugin.Tests\PitStrategy.Plugin.Tests.csproj -c Release
 ```
 
-### Toolchain prerequisites — pick whichever applies
+```bash
+# macOS / Linux — restore only (build/test would need .NET Framework, which doesn't run here)
+dotnet restore PitStrategy.sln
+```
 
-- **.NET 8 SDK is required to *run* the test host** (`net8.0` is the test target framework). On Windows or recent Linux, install via the official installer at <https://dotnet.microsoft.com/download/dotnet/8.0>. On macOS, `brew install dotnet` ships **only .NET 10**, which can build the project (thanks to `global.json`'s `rollForward: major`) but will fail to launch a `net8.0` test host with `You must install or update .NET to run this application`. Either install the .NET 8 SDK directly from microsoft.com, or run `dotnet test` against an installed .NET 8 SDK from another path. macOS users sometimes have a bundled .NET 8 from Unity, Unreal Engine, or Visual Studio for Mac — any of those work.
-- **Plugin DLL build (Windows only)**: requires Visual Studio 2022 with the *.NET desktop development* workload (gives you the .NET Framework 4.8 targeting pack + WPF), plus `SimHub.Plugins.dll` and `GameReaderCommon.dll` either committed to `lib/simhub-sdk/` (gitignored) or copied from a local SimHub install (default `C:\Program Files (x86)\SimHub\`). The CI workflow handles this automatically; locally you'll need to drop the DLLs in yourself.
+The Plugin csproj and the Tests csproj both set `<NoBuild>true</NoBuild>` on non-Windows so `dotnet build` of the solution is a no-op there instead of failing.
+
+### Toolchain prerequisites (Windows)
+
+Visual Studio 2022 with the *.NET desktop development* workload (gives you the .NET Framework 4.8 targeting pack + WPF), plus `SimHub.Plugins.dll` and `GameReaderCommon.dll` either committed to `lib/simhub-sdk/` (gitignored) or copied from a local SimHub install (default `C:\Program Files (x86)\SimHub\`). The CI workflow handles this automatically; locally you'll need to drop the DLLs in yourself.
 
 ## Continuous integration
 
@@ -57,7 +68,7 @@ Pipeline:
 1. Resolve the latest [SHWotever/SimHub release](https://github.com/SHWotever/SimHub/releases) zip via the GitHub API (authenticated with `secrets.GITHUB_TOKEN` to avoid the 60/hr anonymous limit).
 2. Cache the extracted SDK DLLs by SimHub release tag (`actions/cache@v4`).
 3. Cache miss path: download the 217 MB zip, `7z x` it to extract `SimHubSetup_<v>.exe`, run it with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOICONS`, and copy `SimHub.Plugins.dll` + `GameReaderCommon.dll` from the install dir into `lib/simhub-sdk/`.
-4. `dotnet restore` → `dotnet build` Core → `dotnet test` Core → `dotnet build` Plugin (net48).
+4. `dotnet restore` → `dotnet build` solution (Release) → `dotnet test` Plugin.Tests.
 5. Upload artifacts (every push):
    - `PitStrategy-dev-<sha>-dll` — bare DLL
    - `PitStrategy-dev-<sha>-package` — DLL + dashboard template + INSTALL.md + README
@@ -153,8 +164,7 @@ public interface IWPFSettingsV2     : IWPFSettings { ImageSource PictureIcon { g
 3. **GitHub API anonymous rate limit (60/hr) is shared across the Azure runner IP pool** — anonymous `Invoke-RestMethod` to `api.github.com` will rate-limit fast. Pass `${{ secrets.GITHUB_TOKEN }}` as `Authorization: Bearer …` (1,000/hr per repo).
 4. **`Microsoft.CSharp` reference is required** for the C# `dynamic` keyword on net48. SDK-style csprojs don't include it by default.
 5. **`brew install innoextract`** ships v1.9, which only supports Inno Setup ≤ 6.0.5; SimHub uses 6.4.3. Don't try to extract on macOS — use the CI-uploaded `simhub-sdk-dlls` artifact.
-6. **`brew install dotnet`** on macOS installs **only .NET 10**, no .NET 8 runtime. Build works (with `rollForward: major`); test runs require a real .NET 8 SDK.
-7. **The plugin csproj has `<NoBuild>true</NoBuild>` on non-Windows** so `dotnet build` of the solution doesn't trip on `net48`. On macOS you can build the Core library directly without touching the plugin.
+6. **The plugin and tests both set `<NoBuild>true</NoBuild>` on non-Windows** so `dotnet build` of the solution is a no-op on macOS/Linux instead of failing. `dotnet restore` still works there if you just want to validate the package graph.
 
 ## Open TODOs (pickable)
 
@@ -163,7 +173,7 @@ public interface IWPFSettingsV2     : IWPFSettings { ImageSource PictureIcon { g
 - **`PitCount` / `CompletedPitStops`** — track manually in the plugin by detecting `IsInPit` 0→1 transitions across ticks.
 - **Pit-lane geometry** — currently a 350 m / 60 km/h default with override settings. Should read `WeekendInfo.TrackPitLaneTotalLength` and `TrackPitSpeedLimit` from the iRacing SessionInfo YAML.
 - **Logging integration** — find which DLL exposes `SimHub.Logging` (likely `WoteverCommon.dll`), vendor it alongside the SDK fetch, wire `Logging.Current.Info(...)` into the plugin's catch blocks.
-- **Phase 3** — Monte Carlo simulator at `src/PitStrategy.Core/Simulation/`, MC-augmented `Confidence` on the headline `PitDecision`, driver-swap detection, weather windows.
+- **Phase 3** — Monte Carlo simulator at `src/PitStrategy.Plugin/Simulation/`, MC-augmented `Confidence` on the headline `PitDecision`, driver-swap detection, weather windows.
 - **Validate the plugin loads in SimHub end-to-end** — Phase 1+2 is code-complete and CI-green, but the DLL hasn't been deployed and exercised in iRacing yet.
 
 ## Conventions
@@ -174,7 +184,7 @@ public interface IWPFSettingsV2     : IWPFSettings { ImageSource PictureIcon { g
   ```
   Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
   ```
-- **Tests**: Mac users run `dotnet test` against the Core library only. The Plugin shim is exercised in CI on `windows-latest`. Add new tests as plain C# (no JSON fixtures yet); see `tests/PitStrategy.Core.Tests/Strategy/StrategyEngineTests.cs` for the canonical scenario-test pattern.
+- **Tests**: net48 only, Windows only, executed in CI on `windows-latest`. Add new tests as plain C# (no JSON fixtures yet); see `tests/PitStrategy.Plugin.Tests/Strategy/StrategyEngineTests.cs` for the canonical scenario-test pattern.
 
 ## Pointers
 

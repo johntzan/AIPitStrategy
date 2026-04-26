@@ -8,37 +8,28 @@ AI-driven pit strategy plugin for SimHub + iRacing. Outputs a single **PIT NOW /
 - Phase 2 (traffic projection + undercut + FCY tactical alerts): **complete**
 - Phase 3 (Monte Carlo simulator + endurance polish): **deferred**
 
-The Core library has 38 passing unit + golden tests. The SimHub plugin DLL builds on Windows.
+38 passing unit + golden tests. Builds and ships as a single `PitStrategy.dll` for SimHub on Windows.
 
 ## Repository layout
 
 ```
 PitStrategy/
-├── src/
-│   ├── PitStrategy.Core/        # netstandard2.0 — pure decision logic, fully unit-tested
-│   └── PitStrategy.Plugin/      # net48 — SimHub plugin DLL (Windows-only)
-├── tests/PitStrategy.Core.Tests/
+├── src/PitStrategy.Plugin/      # net48 — single SimHub plugin DLL
+├── tests/PitStrategy.Plugin.Tests/
 ├── dashboards/                  # SimHub Dash Studio dashboard templates
 ├── lib/simhub-sdk/              # vendored SimHub SDK DLLs (you provide)
 ├── .github/workflows/ci.yml     # windows-latest build + test + release
 └── docs/                        # INSTALL.md, IRACING-FIELDS.md, ARCHITECTURE.md
 ```
 
-## Build
-
-### Core library + tests (works anywhere)
-
-```bash
-dotnet test tests/PitStrategy.Core.Tests/PitStrategy.Core.Tests.csproj
-```
-
-### Plugin DLL (Windows only)
+## Build (Windows only)
 
 1. Install Visual Studio 2022 with the **.NET desktop development** workload (gives you net48 targeting + WPF designer) and the **.NET 8 SDK**.
 2. Copy `SimHub.Plugins.dll` and `GameReaderCommon.dll` from your SimHub install (default `C:\Program Files (x86)\SimHub\`) into `lib/simhub-sdk/`.
 3. From a PowerShell prompt:
    ```powershell
    dotnet build src\PitStrategy.Plugin\PitStrategy.Plugin.csproj -c Release
+   dotnet test  tests\PitStrategy.Plugin.Tests\PitStrategy.Plugin.Tests.csproj -c Release
    ```
    The Release post-build target auto-copies `PitStrategy.dll` into `C:\Program Files (x86)\SimHub\`.
 4. Restart SimHub. Enable the **Pit Strategy** plugin in Settings → Additional plugins.
